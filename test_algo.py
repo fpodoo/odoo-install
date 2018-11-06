@@ -70,13 +70,10 @@ mod_dep = {
 def get_modules():
     with open('modules_installed.csv', 'r') as mi:
         reader = csv.reader(mi, delimiter=',', quotechar='"')
-        return list(map(lambda x: x[2].strip(':').split(':'), reader))
+        return list(map(lambda x: list(set(x[2].strip(':').split(':'))), reader))
 
 class db(object):
     def __init__(self):
-        self.nbr_scratch = 0
-        self.nbr_cache = 0
-        self.nbr_30 = 0
         self.time = 0.0
         self.dbs = {}
         self.db_re = {}
@@ -95,12 +92,12 @@ class db(object):
             m = mods2.pop(0)
             done.append(m)
             for mod in mod_dep.get(m, []):
-                if mod not in (done+mods2):
+                if mod not in mods:
                     mods.append(mod)
-        return list(set(mods))
+                    mods2.append(mod)
+        return mods
 
     def mod_sort(self, mods):
-        mods = list(set(mods))
         mods.sort(key = lambda x: mod_time.get(x, 0.0))
         return mods
 
@@ -113,13 +110,10 @@ class db(object):
         mods = self.get_dependencies(mods)
         mods_str, mods_re = self.mod_hash(mods)
         if mods_str in self.dbs:
-            self.nbr_cache += 1
             self.times.append(0)
         else:
-            self.nbr_scratch += 1
             self.time += self.get_time(mods)
             self.times.append(self.get_time(mods))
-            if self.get_time(mods)>30: self.nbr_30+=1
         self.dbs[mods_str] = mods_re
 
     def process_whitelist_prebuild(self):
@@ -129,14 +123,12 @@ class db(object):
                 mods_str, mods_re = self.mod_hash(mods)
                 self.dbs[mods_str] = mods_re
                 self.time += self.get_time(mods)
-                if self.get_time(mods)>30: self.nbr_30+=1
 
     def process_whitelist(self, mods):
         mods = self.get_dependencies(mods)
         mods_whitelist = [x for x in mods if x in WHITELIST]
         mods_str, mods_re = self.mod_hash(mods)
         if mods_str in self.dbs:
-            self.nbr_cache += 1
             self.times.append(0)
         else:
             for nbr in range(len(mods_whitelist), 0, -1):
@@ -147,16 +139,12 @@ class db(object):
                     if try_str in self.dbs:
                         best = max(self.get_time(try_mods), best)
                 if best:
-                    self.nbr_cache += 1
                     self.time += self.get_time(mods) - best
                     self.times.append(self.get_time(mods) - best)
-                    if (self.get_time(mods)-best)>30: self.nbr_30+=1
                     break
             else:
-                self.nbr_scratch += 1
                 self.time += self.get_time(mods)
                 self.times.append(self.get_time(mods))
-                if self.get_time(mods)>30: self.nbr_30+=1
 
         self.dbs[mods_str] = mods_re
 
@@ -165,16 +153,8 @@ class db(object):
         mods = self.get_dependencies(mods)
         mods_str, mods_re = self.mod_hash(mods)
         time = self.find_subset(mods)
-        if time:
-            self.nbr_cache += 1
-            self.time += self.get_time(mods) - time
-            self.times.append(self.get_time(mods) - time)
-            if (self.get_time(mods)-time)>30: self.nbr_30+=1
-        else:
-            self.nbr_scratch += 1
-            self.time += self.get_time(mods)
-            self.times.append(self.get_time(mods))
-            if self.get_time(mods)>30: self.nbr_30+=1
+        self.time += self.get_time(mods) - time
+        self.times.append(self.get_time(mods) - time)
         self.dbs[mods_str] = mods_re
 
     def process_subset_blacklist(self, mods):
@@ -185,18 +165,15 @@ class db(object):
 
     def find_subset(self, mods):
         time = 0
-        mods_str = self.mod_hash(mods)[0]
+        mods_str, _ = self.mod_hash(mods)
         for db, db_re in self.dbs.items():
-            if db_re.match(mods_str):
+            if db_re.findall(mods_str):
                 time = max(time, self.get_time(db.strip(',').split(',')))
         return time
 
     def stats(self):
-        # print ('Partial     {}: {}%'.format(self.nbr_scratch, round(self.nbr_scratch * 100 / (self.nbr_cache + self.nbr_scratch))))
-        # print ('Cache       {}: {}%'.format(self.nbr_cache, round(self.nbr_cache * 100 / (self.nbr_cache + self.nbr_scratch))))
         print ('# Databases  {}'.format(len(self.dbs)))
-        print ('DB Above 30s {} = {}%'.format(self.nbr_30, self.nbr_30 * 100 // (self.nbr_scratch+self.nbr_cache)))
-        print ('AVG Time     {}s'.format(round(self.time / (self.nbr_scratch+self.nbr_cache), 2)))
+        print ('AVG Time     {}s'.format(round(self.time / len(self.times), 2)))
         self.times.sort()
         p50 = self.times[len(self.times)//2]
         p95 = self.times[int(len(self.times)*.95)]
