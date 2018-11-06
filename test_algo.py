@@ -4,7 +4,7 @@ import csv
 import copy
 import re, itertools
 
-WHITELIST = ['account','crm','website','stock','project']
+WHITELIST = ['account_accountant','crm','website','stock','project','purchase','sale_management']
 
 with open('module_time.csv', 'r') as mt:
     reader = csv.reader(mt, delimiter=',', quotechar='"')
@@ -96,9 +96,10 @@ class db(object):
             for mod in mod_dep.get(m, []):
                 if mod not in (done+mods2):
                     mods.append(mod)
-        return mods
+        return list(set(mods))
 
     def mod_sort(self, mods):
+        mods = list(set(mods))
         mods.sort(key = lambda x: mod_time.get(x, 0.0))
         return mods
 
@@ -119,7 +120,7 @@ class db(object):
         self.dbs[mods_str] = mods_re
 
     def process_whitelist_prebuild(self):
-        for nbr in range(2,6):
+        for nbr in range(2,len(WHITELIST)+1):
             for mods in itertools.combinations(WHITELIST, nbr):
                 mods = list(mods)
                 mods_str, mods_re = self.mod_hash(mods)
@@ -134,11 +135,18 @@ class db(object):
         if mods_str in self.dbs:
             self.nbr_cache += 1
         else:
-            time = self.find_subset(mods_whitelist)
-            if time:
-                self.nbr_cache += 1
-                self.time += self.get_time(mods) - time
-                if (self.get_time(mods)-time)>30: self.nbr_30+=1
+            for nbr in range(len(mods_whitelist), 0, -1):
+                best = 0
+                for try_mods in itertools.combinations(mods_whitelist, nbr):
+                    try_mods = self.get_dependencies(list(try_mods))
+                    try_str, _ = self.mod_hash(try_mods)
+                    if try_str in self.dbs:
+                        best = max(self.get_time(try_mods), best)
+                if best:
+                    self.nbr_cache += 1
+                    self.time += self.get_time(mods) - best
+                    if (self.get_time(mods)-best)>30: self.nbr_30+=1
+                    break
             else:
                 self.nbr_scratch += 1
                 self.time += self.get_time(mods)
