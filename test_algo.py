@@ -80,6 +80,7 @@ class db(object):
         self.time = 0.0
         self.dbs = {}
         self.db_re = {}
+        self.times = []
 
     def get_time(self, modules):
         time = mod_time['base']
@@ -113,9 +114,11 @@ class db(object):
         mods_str, mods_re = self.mod_hash(mods)
         if mods_str in self.dbs:
             self.nbr_cache += 1
+            self.times.append(0)
         else:
             self.nbr_scratch += 1
             self.time += self.get_time(mods)
+            self.times.append(self.get_time(mods))
             if self.get_time(mods)>30: self.nbr_30+=1
         self.dbs[mods_str] = mods_re
 
@@ -134,6 +137,7 @@ class db(object):
         mods_str, mods_re = self.mod_hash(mods)
         if mods_str in self.dbs:
             self.nbr_cache += 1
+            self.times.append(0)
         else:
             for nbr in range(len(mods_whitelist), 0, -1):
                 best = 0
@@ -145,14 +149,17 @@ class db(object):
                 if best:
                     self.nbr_cache += 1
                     self.time += self.get_time(mods) - best
+                    self.times.append(self.get_time(mods) - best)
                     if (self.get_time(mods)-best)>30: self.nbr_30+=1
                     break
             else:
                 self.nbr_scratch += 1
                 self.time += self.get_time(mods)
+                self.times.append(self.get_time(mods))
                 if self.get_time(mods)>30: self.nbr_30+=1
 
         self.dbs[mods_str] = mods_re
+
 
     def process_subset(self, mods):
         mods = self.get_dependencies(mods)
@@ -161,10 +168,12 @@ class db(object):
         if time:
             self.nbr_cache += 1
             self.time += self.get_time(mods) - time
+            self.times.append(self.get_time(mods) - time)
             if (self.get_time(mods)-time)>30: self.nbr_30+=1
         else:
             self.nbr_scratch += 1
             self.time += self.get_time(mods)
+            self.times.append(self.get_time(mods))
             if self.get_time(mods)>30: self.nbr_30+=1
         self.dbs[mods_str] = mods_re
 
@@ -188,6 +197,11 @@ class db(object):
         print ('# Databases  {}'.format(len(self.dbs)))
         print ('DB Above 30s {} = {}%'.format(self.nbr_30, self.nbr_30 * 100 // (self.nbr_scratch+self.nbr_cache)))
         print ('AVG Time     {}s'.format(round(self.time / (self.nbr_scratch+self.nbr_cache), 2)))
+        self.times.sort()
+        p50 = self.times[len(self.times)//2]
+        p95 = self.times[int(len(self.times)*.95)]
+        p99 = self.times[int(len(self.times)*.99)]
+        print ('p50 p95 p99  {}s {}s {}s'.format(p50, p95, p99))
 
 mods = get_modules()
 
