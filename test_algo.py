@@ -2,6 +2,7 @@
 
 import csv
 import copy
+import sys
 import re, itertools
 
 WHITELIST = ['account_accountant','crm','website','stock','project','purchase','sale_management']
@@ -160,6 +161,7 @@ class db(object):
     def process_subset_blacklist(self, mods):
         self.process_subset(mods)
         mods_whitelist = [x for x in mods if x not in BLACKLIST]
+        self.get_dependencies(mods_whitelist)
         mods_str, mods_re = self.mod_hash(mods_whitelist)
         self.dbs[mods_str] = mods_re
 
@@ -180,7 +182,10 @@ class db(object):
         p99 = self.times[int(len(self.times)*.99)]
         print ('p50 p95 p99  {}s {}s {}s'.format(p50, p95, p99))
 
+
 mods = get_modules()
+if len(sys.argv)>1:
+    mods = mods[:int(sys.argv[1])]
 
 print ("ALL OR NOTHING - DUMMY COMPUTATION")
 dummy = db()
