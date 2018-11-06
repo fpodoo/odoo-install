@@ -4,7 +4,7 @@ import csv
 import copy
 import re, itertools
 
-WHITELIST = ['account','crm','website','stock','project']
+WHITELIST = ['account_accountant','crm','website','stock','project','purchase','sale_management']
 
 with open('module_time.csv', 'r') as mt:
     reader = csv.reader(mt, delimiter=',', quotechar='"')
@@ -12,26 +12,59 @@ with open('module_time.csv', 'r') as mt:
 BLACKLIST = [key for key,value in mod_time.items() if value<10.0]
 
 mod_dep = {
-    'sale_management': ['sale'],
-    'account_accountant': ['account'],
-    'sale': ['account'],
-    'sale_subscription': ['sale_management'],
-    'hr_timesheet': ['hr', 'project'],
-    'project_timesheet_synchro': ['hr_timesheet'],
-    'point_of_sale': ['stock','account'],
-    'mrp_maintenance': ['mrp'],
-    'quality_mrp': ['mrp'],
-    'mrp_plm': ['mrp'],
-    'website_forum': ['website'],
-    'website_blog': ['website'],
-    'website_slides': ['website'],
-    'website_event': ['website','event'],
-    'hr_recruitment': ['hr'],
-    'hr_holidays': ['hr'],
-    'hr_appraisal': ['hr'],
-    'website_sale': ['website', 'sale'],
-    'mrp': ['stock'],
-    'marketing_automation': ['mass_mailing'],
+    'account': ['mail'],
+    'account_accountant': ['mail', 'account'],
+    'board': [],
+    'calendar': ['mail'],
+    'contacts': ['mail'],
+    'crm': ['calendar', 'mail', 'contacts'],
+    'documents': ['mail'],
+    'fleet': ['mail'],
+    'helpdesk': ['mail'],
+    'hr': ['mail'],
+    'hr_appraisal': ['calendar', 'mail', 'survey', 'hr'],
+    'hr_attendance': ['mail', 'hr'],
+    'hr_expense': ['mail', 'account', 'hr'],
+    'hr_holidays': ['calendar', 'mail', 'hr'],
+    'hr_recruitment': ['calendar', 'mail', 'hr'],
+    'im_livechat': ['mail'],
+    'iot': ['mail'],
+    'lunch': ['mail'],
+    'mail': [],
+    'maintenance': ['mail'],
+    'marketing_automation': ['mass_mailing', 'mail', 'contacts'],
+    'mass_mailing': ['mail', 'contacts'],
+    'mrp': ['mail', 'stock'],
+    'mrp_plm': ['mail', 'mrp', 'stock'],
+    'note': ['mail'],
+    'point_of_sale': ['mail', 'account', 'stock'],
+    'project': ['mail'],
+    'project_forecast': ['mail', 'project', 'hr'],
+    'purchase': ['mail', 'account'],
+    'quality_control': ['mail', 'stock'],
+    'repair': ['mail', 'account', 'stock', 'sale_management'],
+    'sale_management': ['mail', 'account'],
+    'sale_subscription': ['mail', 'account', 'sale_management'],
+    'sign': ['mail'],
+    'stock': ['mail'],
+    'stock_barcode': ['mail', 'stock'],
+    'survey': ['mail'],
+    'timesheet_grid': ['mail', 'project', 'hr'],
+    'voip': ['mail'],
+    'web_studio': ['mail'],
+    'website': ['mail'],
+    'website_blog': ['website', 'mail'],
+    'website_calendar': ['website', 'mail', 'calendar', 'hr'],
+    'website_event': ['website', 'mail'],
+    'website_forum': ['website', 'mail'],
+    'website_hr_recruitment': ['website',
+                            'mail',
+                            'hr_recruitment',
+                            'calendar',
+                            'hr'],
+    'website_livechat': ['website', 'mail', 'im_livechat'],
+    'website_sale': ['website', 'mail', 'account'],
+    'website_slides': ['website', 'mail'],
 }
 
 def get_modules():
@@ -47,6 +80,7 @@ class db(object):
         self.time = 0.0
         self.dbs = {}
         self.db_re = {}
+        self.times = []
 
     def get_time(self, modules):
         time = mod_time['base']
@@ -63,9 +97,10 @@ class db(object):
             for mod in mod_dep.get(m, []):
                 if mod not in (done+mods2):
                     mods.append(mod)
-        return mods
+        return list(set(mods))
 
     def mod_sort(self, mods):
+        mods = list(set(mods))
         mods.sort(key = lambda x: mod_time.get(x, 0.0))
         return mods
 
@@ -79,14 +114,16 @@ class db(object):
         mods_str, mods_re = self.mod_hash(mods)
         if mods_str in self.dbs:
             self.nbr_cache += 1
+            self.times.append(0)
         else:
             self.nbr_scratch += 1
             self.time += self.get_time(mods)
+            self.times.append(self.get_time(mods))
             if self.get_time(mods)>30: self.nbr_30+=1
         self.dbs[mods_str] = mods_re
 
     def process_whitelist_prebuild(self):
-        for nbr in range(2,6):
+        for nbr in range(2,len(WHITELIST)+1):
             for mods in itertools.combinations(WHITELIST, nbr):
                 mods = list(mods)
                 mods_str, mods_re = self.mod_hash(mods)
@@ -100,18 +137,29 @@ class db(object):
         mods_str, mods_re = self.mod_hash(mods)
         if mods_str in self.dbs:
             self.nbr_cache += 1
+            self.times.append(0)
         else:
-            time = self.find_subset(mods_whitelist)
-            if time:
-                self.nbr_cache += 1
-                self.time += self.get_time(mods) - time
-                if (self.get_time(mods)-time)>30: self.nbr_30+=1
+            for nbr in range(len(mods_whitelist), 0, -1):
+                best = 0
+                for try_mods in itertools.combinations(mods_whitelist, nbr):
+                    try_mods = self.get_dependencies(list(try_mods))
+                    try_str, _ = self.mod_hash(try_mods)
+                    if try_str in self.dbs:
+                        best = max(self.get_time(try_mods), best)
+                if best:
+                    self.nbr_cache += 1
+                    self.time += self.get_time(mods) - best
+                    self.times.append(self.get_time(mods) - best)
+                    if (self.get_time(mods)-best)>30: self.nbr_30+=1
+                    break
             else:
                 self.nbr_scratch += 1
                 self.time += self.get_time(mods)
+                self.times.append(self.get_time(mods))
                 if self.get_time(mods)>30: self.nbr_30+=1
 
         self.dbs[mods_str] = mods_re
+
 
     def process_subset(self, mods):
         mods = self.get_dependencies(mods)
@@ -120,10 +168,12 @@ class db(object):
         if time:
             self.nbr_cache += 1
             self.time += self.get_time(mods) - time
+            self.times.append(self.get_time(mods) - time)
             if (self.get_time(mods)-time)>30: self.nbr_30+=1
         else:
             self.nbr_scratch += 1
             self.time += self.get_time(mods)
+            self.times.append(self.get_time(mods))
             if self.get_time(mods)>30: self.nbr_30+=1
         self.dbs[mods_str] = mods_re
 
@@ -147,6 +197,11 @@ class db(object):
         print ('# Databases  {}'.format(len(self.dbs)))
         print ('DB Above 30s {} = {}%'.format(self.nbr_30, self.nbr_30 * 100 // (self.nbr_scratch+self.nbr_cache)))
         print ('AVG Time     {}s'.format(round(self.time / (self.nbr_scratch+self.nbr_cache), 2)))
+        self.times.sort()
+        p50 = self.times[len(self.times)//2]
+        p95 = self.times[int(len(self.times)*.95)]
+        p99 = self.times[int(len(self.times)*.99)]
+        print ('p50 p95 p99  {}s {}s {}s'.format(p50, p95, p99))
 
 mods = get_modules()
 
